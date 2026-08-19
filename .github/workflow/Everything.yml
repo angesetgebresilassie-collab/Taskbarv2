@@ -1,0 +1,408 @@
+name: Import Taskbar + Apply macOS theme and features
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-and-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository (main)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git for commits
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Clone farmerbb/Taskbar (shallow)
+        run: |
+          rm -rf /tmp/taskbar
+          git clone --depth 1 https://github.com/farmerbb/Taskbar.git /tmp/taskbar
+
+      - name: Create feature branch
+        run: |
+          git checkout -b feature/macos-theme-frosted-minimize
+
+      - name: Copy upstream files into repository (excluding .git)
+        run: |
+          rsync -a --delete --exclude='.git' /tmp/taskbar/ ./
+
+      - name: Add apply_changes script and make executable
+        run: |
+          mkdir -p scripts
+          cat > scripts/apply_changes.sh <<'SCRIPT'
+          #!/usr/bin/env bash
+          set -euo pipefail
+          ROOT="$(pwd)"
+          echo "Running apply_changes.sh in $ROOT"
+
+          # Remove/replace any existing 'app' module to ensure the new module is consistent.
+          rm -rf app
+          mkdir -p app/src/main/java/com/example/taskbarv2
+          mkdir -p app/src/main/res/layout
+          mkdir -p app/src/main/res/values
+          mkdir -p app/src/main/res/drawable
+          mkdir -p app/src/main/AndroidManifest.xml
+
+          # Top-level app module build.gradle
+          cat > app/build.gradle <<'EOF'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.example.taskbarv2"
+                  minSdk 21
+                  targetSdk 34
+                  versionCode 1
+                  versionName "0.1"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+
+              namespace 'com.example.taskbarv2'
+          }
+
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'androidx.core:core-ktx:1.9.0'
+              implementation 'androidx.preference:preference:1.2.0'
+              implementation 'com.eightbitlab:blurview:1.6.6' // fallback blur
+              implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+          }
+          EOF
+
+          # AndroidManifest for the app module
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              package="com.example.taskbarv2">
+
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+              <application
+                  android:allowBackup="true"
+                  android:label="Taskbarv2"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher_round">
+                  <activity android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <activity android:name=".SettingsActivity" android:exported="true" />
+                  <service android:name=\".KeepAliveService\" android:exported=\"false\" />
+              </application>
+          </manifest>
+          EOF
+
+          # MainActivity: sets up UI, blur, and uses Freeform-style titlebar with traffic-light controls
+          cat > app/src/main/java/com/example/taskbarv2/MainActivity.java <<'EOF'
+          package com.example.taskbarv2;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.graphics.RenderEffect;
+          import android.graphics.Shader;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.view.View;
+          import android.widget.FrameLayout;
+          import android.widget.ImageButton;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+          import androidx.annotation.Nullable;
+          import androidx.core.content.ContextCompat;
+
+          public class MainActivity extends Activity {
+              FrameLayout root;
+
+              @Override
+              protected void onCreate(@Nullable Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  root = new FrameLayout(this);
+                  root.setPadding(0,0,0,0);
+
+                  // Titlebar (macOS-like)
+                  LinearLayout titlebar = new LinearLayout(this);
+                  titlebar.setOrientation(LinearLayout.HORIZONTAL);
+                  titlebar.setPadding(20,20,20,20);
+                  titlebar.setBackgroundColor(0x66FFFFFF); // semi translucent
+
+                  // Traffic light buttons (close/minimize/maximize)
+                  ImageButton close = new ImageButton(this);
+                  close.setBackgroundColor(0x00FFFFFF);
+                  close.setImageDrawable(ContextCompat.getDrawable(this, android.R.drawable.ic_menu_close_clear_cancel));
+                  close.setOnClickListener(v -> finish());
+
+                  ImageButton minimize = new ImageButton(this);
+                  minimize.setBackgroundColor(0x00FFFFFF);
+                  minimize.setImageDrawable(ContextCompat.getDrawable(this, android.R.drawable.ic_media_pause));
+                  minimize.setOnClickListener(v -> {
+                      // Move to background (minimize) - not finish
+                      moveTaskToBack(true);
+                      // start KeepAliveService
+                      startService(new Intent(this, KeepAliveService.class));
+                  });
+
+                  ImageButton maximize = new ImageButton(this);
+                  maximize.setBackgroundColor(0x00FFFFFF);
+                  maximize.setImageDrawable(ContextCompat.getDrawable(this, android.R.drawable.ic_menu_view));
+                  maximize.setOnClickListener(v -> {
+                      // toggle full-screen for demo
+                      View decor = getWindow().getDecorView();
+                      int ui = decor.getSystemUiVisibility();
+                      decor.setSystemUiVisibility(ui ^ View.SYSTEM_UI_FLAG_FULLSCREEN);
+                  });
+
+                  titlebar.addView(close, 120, 120);
+                  titlebar.addView(minimize, 120, 120);
+                  titlebar.addView(maximize, 120, 120);
+
+                  // Content
+                  TextView content = new TextView(this);
+                  content.setText("Taskbarv2 — Monterey-style demo. Use Settings to control background keep-alive.");
+                  content.setPadding(40,40,40,40);
+
+                  // Settings button
+                  ImageButton settingsBtn = new ImageButton(this);
+                  settingsBtn.setImageDrawable(ContextCompat.getDrawable(this, android.R.drawable.ic_menu_manage));
+                  settingsBtn.setOnClickListener(v -> startActivity(new Intent(this, SettingsActivity.class)));
+
+                  root.addView(titlebar, new FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+                  root.addView(content);
+                  root.addView(settingsBtn);
+
+                  // Apply frosted glass blur: RenderEffect on API 31+, fallback use BlurView later
+                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                      float radius = 16f;
+                      root.setRenderEffect(RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP));
+                  } else {
+                      // leave placeholder: BlurView fallback will be added in layout if needed
+                  }
+
+                  setContentView(root);
+              }
+          }
+          EOF
+
+          # KeepAliveService: foreground service that stops after a timeout read from SharedPreferences
+          cat > app/src/main/java/com/example/taskbarv2/KeepAliveService.java <<'EOF'
+          package com.example.taskbarv2;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.os.Handler;
+          import android.os.IBinder;
+          import android.os.Looper;
+          import androidx.annotation.Nullable;
+          import androidx.core.app.NotificationCompat;
+          import androidx.preference.PreferenceManager;
+
+          public class KeepAliveService extends Service {
+              public static final String CHANNEL_ID = "keepalive_channel";
+              Handler handler = new Handler(Looper.getMainLooper());
+              Runnable stopRunnable = () -> stopSelf();
+
+              @Override
+              public void onCreate() {
+                  super.onCreate();
+                  createNotificationChannel();
+                  Intent i = new Intent(this, MainActivity.class);
+                  PendingIntent pi = PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE);
+                  Notification n = new NotificationCompat.Builder(this, CHANNEL_ID)
+                      .setContentTitle("Taskbarv2 running in background")
+                      .setContentText("Tap to open or stop backgrounding from Settings")
+                      .setSmallIcon(android.R.drawable.ic_menu_info_details)
+                      .setContentIntent(pi)
+                      .setOngoing(true)
+                      .build();
+                  startForeground(1, n);
+
+                  SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(this);
+                  String timeout = prefs.getString("keepalive_timeout", "5"); // default 5 minutes
+                  long minutes = 0;
+                  if ("off".equals(timeout)) {
+                      minutes = 0;
+                  } else if ("indefinite".equals(timeout)) {
+                      minutes = -1;
+                  } else {
+                      minutes = Long.parseLong(timeout);
+                  }
+                  if (minutes > 0) {
+                      handler.postDelayed(stopRunnable, minutes * 60 * 1000L);
+                  } else if (minutes == 0) {
+                      // stop immediately
+                      handler.post(stopRunnable);
+                  } else {
+                      // indefinite - do nothing
+                  }
+              }
+
+              @Override
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  return START_STICKY;
+              }
+
+              @Override
+              public void onDestroy() {
+                  handler.removeCallbacksAndMessages(null);
+                  super.onDestroy();
+              }
+
+              @Nullable
+              @Override
+              public IBinder onBind(Intent intent) {
+                  return null;
+              }
+
+              void createNotificationChannel() {
+                  NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+                  NotificationChannel channel = new NotificationChannel(CHANNEL_ID, "KeepAlive", NotificationManager.IMPORTANCE_LOW);
+                  if (nm != null) nm.createNotificationChannel(channel);
+              }
+          }
+          EOF
+
+          # SettingsActivity: Preference screen to pick keep-alive timeout and request ignore battery optimizations
+          cat > app/src/main/java/com/example/taskbarv2/SettingsActivity.java <<'EOF'
+          package com.example.taskbarv2;
+
+          import android.content.Intent;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import androidx.appcompat.app.AppCompatActivity;
+          import androidx.preference.ListPreference;
+          import androidx.preference.Preference;
+          import androidx.preference.PreferenceFragmentCompat;
+
+          public class SettingsActivity extends AppCompatActivity {
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+                  getSupportFragmentManager()
+                      .beginTransaction()
+                      .replace(android.R.id.content, new SettingsFragment())
+                      .commit();
+              }
+
+              public static class SettingsFragment extends PreferenceFragmentCompat {
+                  @Override
+                  public void onCreatePreferences(Bundle savedInstanceState, String rootKey) {
+                      ListPreference keep = new ListPreference(getContext());
+                      keep.setKey("keepalive_timeout");
+                      keep.setTitle("Background keep-alive");
+                      keep.setEntries(new CharSequence[] {"Off", "1 minute", "5 minutes (default)", "30 minutes", "Indefinite"});
+                      keep.setEntryValues(new CharSequence[] {"off","1","5","30","indefinite"});
+                      keep.setDefaultValue("5");
+
+                      Preference battery = new Preference(getContext());
+                      battery.setKey("request_ignore_battery");
+                      battery.setTitle("Request ignore battery optimizations");
+                      battery.setOnPreferenceClickListener(p -> {
+                          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                              Intent i = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                              i.setData(Uri.parse("package:" + getContext().getPackageName()));
+                              startActivity(i);
+                          }
+                          return true;
+                      });
+
+                      getPreferenceScreen(); // ensure screen exists
+                      setPreferencesFromResource(androidx.preference.R.xml.preferences, rootKey); // fallback
+                      getPreferenceManager().getPreferenceScreen().addPreference(keep);
+                      getPreferenceManager().getPreferenceScreen().addPreference(battery);
+                  }
+              }
+          }
+          EOF
+
+          # Simple styles.xml with Monterey-like accent and rounded titlebar token
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <resources>
+              <style name="Theme.Taskbarv2" parent="Theme.AppCompat.Light.NoActionBar">
+                  <item name="colorPrimary">#0A84FF</item>
+                  <item name="android:windowMinWidthMajor">40%</item>
+                  <item name="android:windowMinWidthMinor">40%</item>
+              </style>
+          </resources>
+          EOF
+
+          # Basic layout for later use (placeholder)
+          cat > app/src/main/res/layout/activity_main.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+              android:layout_width="match_parent"
+              android:layout_height="match_parent">
+              <!-- Placeholder. The MainActivity uses programmatic layout. -->
+          </FrameLayout>
+          EOF
+
+          # Add a simple launcher icon placeholder (optional)
+          cat > app/src/main/res/drawable/ic_launcher_round.xml <<'EOF'
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+            <solid android:color="#0A84FF" />
+          </shape>
+          EOF
+
+          # Ensure settings.gradle exists and includes app
+          if [ ! -f settings.gradle ]; then
+            cat > settings.gradle <<'EOF'
+            include ':app'
+            EOF
+          else
+            # if exists, ensure :app is included
+            if ! grep -q "':app'" settings.gradle && ! grep -q ":app" settings.gradle; then
+              echo "include ':app'" >> settings.gradle
+            fi
+          fi
+
+          # Commit changes made by the script
+          git add -A
+          git commit -m "chore: add Android app module with macOS-style theme, blur fallback, keepalive service and settings" || echo "Nothing to commit"
+
+          echo "apply_changes.sh completed."
+          SCRIPT
+          chmod +x scripts/apply_changes.sh
+
+      - name: Run apply_changes script
+        run: |
+          chmod +x scripts/apply_changes.sh
+          scripts/apply_changes.sh
+
+      - name: Push feature branch back to repository
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git push -u origin feature/macos-theme-frosted-minimize --force
+
+      - name: Show branch link
+        run: |
+          echo "Branch feature/macos-theme-frosted-minimize created and pushed: https://github.com/${{ github.repository }}/tree/feature%2Fmacos-theme-frosted-minimize"
