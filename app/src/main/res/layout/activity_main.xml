@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical">
+
+    <!-- MacOS-like toolbar -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingEnd="12dp"
+        android:gravity="center_vertical"
+        android:background="#F2F2F2">
+
+        <!-- Traffic-light buttons -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginEnd="12dp">
+
+            <View
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:background="#FF5F57"
+                android:layout_marginEnd="8dp"
+                android:layout_marginTop="2dp"
+                android:backgroundTintMode="src_in" />
+
+            <View
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:background="#FFBD2E"
+                android:layout_marginEnd="8dp"
+                android:layout_marginTop="2dp"
+                android:backgroundTintMode="src_in" />
+
+            <ImageButton
+                android:id="@+id/btn_minimize"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:background="#28C840"
+                android:contentDescription="Minimize"
+                android:scaleType="center"
+                android:padding="0dp"
+                android:layout_marginTop="2dp" />
+        </LinearLayout>
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Taskbarv2"
+            android:textStyle="bold"
+            android:textSize="16sp" />
+
+    </LinearLayout>
+
+    <!-- Content area with frosted blur container -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="centerCrop"
+            android:src="@android:drawable/ic_menu_gallery"
+            android:alpha="0.06" />
+
+        <View
+            android:id="@+id/blur_container"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Taskbarv2 - content area"
+            android:layout_gravity="center"
+            android:textSize="18sp"
+            android:textColor="#222222" />
+
+    </FrameLayout>
+
+</LinearLayout>
