@@ -1,0 +1,27 @@
+@@
+     <LinearLayout android:layout_width="@dimen/tb_icon_size"
+                   android:layout_height="24dp"
+                   android:layout_gravity="center_horizontal"
+                   android:clickable="true"
+                   android:id="@+id/hide_taskbar_button_layout_alt" >
+ 
+-        <Button
+-            android:layout_width="24dp"
+-            android:layout_height="24dp"
+-            android:layout_marginLeft="21dp"
+-            android:textSize="20dp"
+-            android:background="@null"
+-            android:rotation="90"
+-            android:id="@+id/hide_taskbar_button_alt" />
++        <!-- Minimize button added by macOS-style feature -->
++        <include layout="@layout/tb_taskbar_minimize_button" />
++
++        <Button
++            android:layout_width="24dp"
++            android:layout_height="24dp"
++            android:layout_marginLeft="21dp"
++            android:textSize="20dp"
++            android:background="@null"
++            android:rotation="90"
++            android:id="@+id/hide_taskbar_button_alt" />
+*** End Patch
