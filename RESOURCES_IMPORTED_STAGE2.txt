@@ -1,0 +1,13 @@
+Stage 2 resource import summary
+
+Imported directories (from farmerbb/Taskbar at commit e2a00b9):
+- app/src/main/res/ (layouts, drawables, mipmaps, values, xml, anim, etc.)
+- app/src/nonlib/res/ (non-playstore resources)
+- app/src/playstore/res/ (playstore-specific resources)
+
+Notes:
+- I preserved resource directory structure and filenames.
+- Large binary assets (PNG, mipmap, drawables) were added as-is.
+- If you'd like individual resource files broken into separate commits, tell me and I will split them.
+
+Next: Stage 3 will import remaining non-core source packages and tests.
