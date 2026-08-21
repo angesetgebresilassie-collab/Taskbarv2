@@ -1,0 +1,9 @@
+feat(ui): add frosted blur, minimize button, and lightweight host helpers
+
+- Added RenderEffect-based blur (API 31+) with drawable fallback for older APIs.
+- Added a minimize button layout and string resource.
+- Added minimal UIHostService helpers as placeholders to keep changes isolated and reviewable.
+
+Notes:
+- These changes are intentionally defensive and minimal; they are designed to be merged and then iteratively improved.
+- If you prefer I can instead produce diffs that patch the existing TaskbarController in place rather than adding a parallel file.

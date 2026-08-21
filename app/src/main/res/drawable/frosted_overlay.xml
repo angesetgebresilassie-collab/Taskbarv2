@@ -1,0 +1,4 @@
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <!-- Semi-transparent white overlay used as a low-cost frosted effect fallback -->
+    <solid android:color="#80FFFFFF" />
+</shape>
