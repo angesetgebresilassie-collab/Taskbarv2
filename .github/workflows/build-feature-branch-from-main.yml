@@ -14,6 +14,10 @@ on:
         description: 'Build flavor to assemble (e.g. FreeDebug or FreeRelease)'
         required: false
         default: 'FreeDebug'
+      gradleVersion:
+        description: 'Gradle version to use for generating wrapper if missing (e.g. 8.5.1)'
+        required: false
+        default: '8.5.1'
 
 jobs:
   build:
@@ -30,11 +34,10 @@ jobs:
 
       - name: Diagnostic - show branch and root files
         run: |
-          echo "Git branch:"
-          git rev-parse --abbrev-ref HEAD || true
+          echo "Checked-out branch: $(git rev-parse --abbrev-ref HEAD || true)"
           echo "Latest commit:"
           git --no-pager log -1 --oneline || true
-          echo "Top-level file list (ls -la):"
+          echo "Top-level file list:"
           ls -la || true
           echo "Find gradle-related files (for debugging):"
           find . -maxdepth 6 -type f \( -name "*.gradle*" -o -name "gradle-wrapper.properties" -o -name "settings.gradle*" -o -name "gradlew" \) -print || true
@@ -54,58 +57,38 @@ jobs:
             platform-tools
             cmdline-tools
 
+      - name: Ensure tools for bootstrap (unzip, wget)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq unzip wget
+
       - name: Ensure Gradle wrapper exists (generate if missing) and run build
         env:
           FLAVOR_INPUT: ${{ github.event.inputs.buildFlavor }}
+          GRADLE_VERSION: ${{ github.event.inputs.gradleVersion }}
         run: |
           set -euo pipefail
-          INPUT="${FLAVOR_INPUT:-FreeDebug}"
-          TASK="assemble${INPUT}"
+          FLAVOR="${FLAVOR_INPUT:-FreeDebug}"
+          FLAVOR="${FLAVOR// /}"
+          TASK="assemble${FLAVOR}"
           echo "Target Gradle task: $TASK"
 
-          # Find the project directory containing build.gradle(.kts) or settings.gradle(.kts)
           PROJECT_DIR=$(find . -maxdepth 5 -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) -printf '%h\n' | sort -u | head -n 1 || true)
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "ERROR: Could not find a directory containing build.gradle or settings.gradle in the checked-out branch."
+            echo "ERROR: Could not find build.gradle or settings.gradle in the checked-out branch."
             echo "Listing repo for debugging:"
             ls -la
             find . -maxdepth 6 -type f -print
             exit 3
           fi
 
-          echo "Project directory: $PROJECT_DIR"
+          echo "Project directory detected: $PROJECT_DIR"
           cd "$PROJECT_DIR"
 
-          # If gradlew exists in that directory, use it. Otherwise try to generate it.
-          if [ -f "./gradlew" ]; then
-            echo "Found existing gradlew in $PROJECT_DIR"
-            chmod +x ./gradlew || true
-          else
-            echo "Gradle wrapper not found. Installing system Gradle and generating wrapper..."
-            sudo apt-get update -qq
-            sudo apt-get install -y gradle || true
-            # generate the wrapper; tolerate failure but exit if wrapper still missing
-            gradle wrapper || true
-            if [ -f "./gradlew" ]; then
-              echo "Gradle wrapper generated successfully."
-              chmod +x ./gradlew || true
-            else
-              echo "ERROR: Failed to generate gradlew. Listing $PROJECT_DIR contents:"
-              ls -la
-              exit 4
-            fi
-          fi
-
-          # Run the wrapper
-          echo "Running wrapper: ./gradlew $TASK from $(pwd)"
-          ./gradlew "$TASK" --no-daemon --stacktrace
-
-      - name: Create dummy keystore (for signing test builds)
-        if: always()
-        run: |
-          mkdir -p app/keystore
+          mkdir -p app/keystore || true
           if [ ! -f app/keystore/release.jks ]; then
+            echo "Creating dummy keystore at app/keystore/release.jks (testing only)"
             keytool -genkeypair -v \
               -keystore app/keystore/release.jks \
               -storepass changeit \
@@ -116,8 +99,38 @@ jobs:
               -dname "CN=Dummy, OU=Dev, O=Example, L=City, S=State, C=US" \
               -storetype JKS || true
           else
-            echo "Keystore already exists, skipping generation."
+            echo "Keystore already present; skipping generation."
           fi
+
+          if [ -f "./gradlew" ]; then
+            echo "Using existing gradlew in $PROJECT_DIR"
+            chmod +x ./gradlew || true
+          else
+            echo "gradlew not found. Downloading Gradle ${GRADLE_VERSION} and generating wrapper..."
+            DIST_URL="https://services.gradle.org/distributions/gradle-${GRADLE_VERSION}-bin.zip"
+            echo "Downloading $DIST_URL"
+            wget -q -O /tmp/gradle.zip "$DIST_URL"
+            unzip -q /tmp/gradle.zip -d /tmp
+            GRADLE_BIN="/tmp/gradle-${GRADLE_VERSION}/bin/gradle"
+            if [ ! -x "$GRADLE_BIN" ]; then
+              echo "ERROR: downloaded Gradle binary not found at $GRADLE_BIN"
+              ls -la /tmp
+              exit 4
+            fi
+            echo "Generating wrapper with $GRADLE_BIN"
+            "$GRADLE_BIN" wrapper || true
+            if [ -f "./gradlew" ]; then
+              chmod +x ./gradlew || true
+              echo "Wrapper generated successfully."
+            else
+              echo "ERROR: gradlew generation failed. Directory listing:"
+              ls -la
+              exit 5
+            fi
+          fi
+
+          echo "Running wrapper: ./gradlew $TASK from $(pwd)"
+          ./gradlew "$TASK" --no-daemon --stacktrace
 
       - name: Upload APK/AAB artifacts
         if: always()
@@ -126,4 +139,4 @@ jobs:
           name: app-apks
           path: |
             app/build/outputs/**/*.apk
-            app/build/outputs/**/*.aab
+            app/build/outputs/**/*.aab              
