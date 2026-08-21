@@ -1,0 +1,54 @@
+name: Android Manual Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      buildFlavor:
+        description: 'Build flavor to assemble (e.g. FreeDebug or FreeRelease)'
+        required: false
+        default: 'FreeDebug'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build Android APK (manual)
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: google-github-actions/setup-android@v2
+        with:
+          api-level: 34
+          build-tools: '34.0.0'
+          components: |
+            platform-tools
+            cmdline-tools
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build selected flavor
+        env:
+          FLAVOR_INPUT: ${{ github.event.inputs.buildFlavor }}
+        run: |
+          # Normalize input to a Gradle task name. Accepts values like FreeDebug, freeDebug, freerelease, etc.
+          INPUT="${FLAVOR_INPUT:-FreeDebug}"
+          TASK="assemble${INPUT}"
+          echo "Building with task: $TASK"
+          ./gradlew "$TASK" --no-daemon --stacktrace
+
+      - name: Upload APK/AAB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-apks
+          path: |
+            app/build/outputs/**/*.apk
+            app/build/outputs/**/*.aab
