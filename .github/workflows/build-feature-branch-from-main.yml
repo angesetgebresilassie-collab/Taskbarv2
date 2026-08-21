@@ -1,6 +1,5 @@
 name: Build arbitrary branch (manual from main)
 
-# Ensure actions have permission to read repository contents
 permissions:
   contents: read
 
@@ -25,7 +24,6 @@ jobs:
       - name: Checkout target branch (full fetch)
         uses: actions/checkout@v4
         with:
-          # Ensure we fetch all refs and tags so we can checkout any branch
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
           persist-credentials: true
@@ -48,7 +46,7 @@ jobs:
           java-version: '21'
 
       - name: Set up Android SDK
-        uses: google-github-actions/setup-android@v2
+        uses: android-actions/setup-android@v4
         with:
           api-level: 34
           build-tools: '34.0.0'
