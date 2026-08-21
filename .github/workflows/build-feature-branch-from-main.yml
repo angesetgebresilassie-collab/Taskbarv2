@@ -1,0 +1,79 @@
+name: Build arbitrary branch (manual from main)
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to check out and build (e.g. feature/macos-theme-frosted-minimize)'
+        required: false
+        default: 'feature/macos-theme-frosted-minimize'
+      buildFlavor:
+        description: 'Build flavor to assemble (e.g. FreeDebug or FreeRelease)'
+        required: false
+        default: 'FreeDebug'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build selected branch + flavor
+
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@v4
+        with:
+          # Checkout the branch specified by input (fetch all refs)
+          ref: ${{ github.event.inputs.branch }}
+          fetch-depth: 0
+
+      - name: Confirm branch
+        run: echo "Checked out branch: $(git rev-parse --abbrev-ref HEAD)"
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: google-github-actions/setup-android@v2
+        with:
+          api-level: 34
+          build-tools: '34.0.0'
+          components: |
+            platform-tools
+            cmdline-tools
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Optionally create dummy keystore (for release signing)
+        if: startsWith(toLower(github.event.inputs.buildFlavor || 'FreeDebug'), 'free') == false || contains(toLower(github.event.inputs.buildFlavor || 'FreeDebug'), 'release')
+        run: |
+          echo "Creating dummy keystore at app/keystore/release.jks"
+          mkdir -p app/keystore
+          keytool -genkeypair -v \
+            -keystore app/keystore/release.jks \
+            -storepass changeit \
+            -alias release \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=Dummy, OU=Dev, O=Example, L=City, S=State, C=US" \
+            -storetype JKS || true
+
+      - name: Build selected flavor
+        env:
+          FLAVOR_INPUT: ${{ github.event.inputs.buildFlavor }}
+        run: |
+          INPUT="${FLAVOR_INPUT:-FreeDebug}"
+          TASK="assemble${INPUT}"
+          echo "Running Gradle task: $TASK"
+          ./gradlew "$TASK" --no-daemon --stacktrace
+
+      - name: Upload APK/AAB artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-apks
+          path: |
+            app/build/outputs/**/*.apk
+            app/build/outputs/**/*.aab
