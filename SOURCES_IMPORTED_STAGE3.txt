@@ -1,0 +1,14 @@
+Stage 3 source import summary
+
+Imported Java/Kotlin source directories and test sources (from farmerbb/Taskbar at commit e2a00b9):
+- app/src/nonlib/java/ (non-playstore java sources)
+- app/src/playstore/java/ (playstore-specific java sources)
+- app/src/compat-*/ (compat helpers for API-specific behavior)
+- app/src/test/java/ (unit tests and mocks)
+
+Notes:
+- Preserved package structure and file contents.
+- Where upstream files depended on build-time generated values (BuildConfig, generated R classes), I included placeholder stubs where needed to allow compilation to proceed later.
+- If you want these source files split into separate commits by package, tell me and I will re-run with finer-grained commits.
+
+Next: Stage 4 will implement the macOS-style UI changes (frosted blur, minimize behavior) and KeepAlive/service tweaks on top of the imported code.
