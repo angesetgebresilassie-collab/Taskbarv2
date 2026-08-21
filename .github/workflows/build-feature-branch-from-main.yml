@@ -36,7 +36,7 @@ jobs:
           git --no-pager log -1 --oneline || true
           echo "Top-level file list (ls -la):"
           ls -la || true
-          echo "Find gradle files (for debugging):"
+          echo "Find gradle-related files (for debugging):"
           find . -maxdepth 6 -type f \( -name "*.gradle*" -o -name "gradle-wrapper.properties" -o -name "settings.gradle*" -o -name "gradlew" \) -print || true
 
       - name: Set up JDK 21
@@ -54,40 +54,56 @@ jobs:
             platform-tools
             cmdline-tools
 
-      - name: Make gradlew executable and build (search for wrapper)
+      - name: Ensure Gradle wrapper exists (generate if missing) and run build
         env:
           FLAVOR_INPUT: ${{ github.event.inputs.buildFlavor }}
         run: |
+          set -euo pipefail
           INPUT="${FLAVOR_INPUT:-FreeDebug}"
           TASK="assemble${INPUT}"
-          echo "Will attempt to run Gradle task: $TASK"
+          echo "Target Gradle task: $TASK"
 
-          # find gradlew anywhere in repo (limit depth to avoid long searches)
-          GRADLEW_PATH=$(find . -maxdepth 6 -type f -name gradlew -print -quit || true)
+          # Find the project directory containing build.gradle(.kts) or settings.gradle(.kts)
+          PROJECT_DIR=$(find . -maxdepth 5 -type f \( -name "build.gradle" -o -name "build.gradle.kts" -o -name "settings.gradle" -o -name "settings.gradle.kts" \) -printf '%h\n' | sort -u | head -n 1 || true)
 
-          if [ -n "$GRADLEW_PATH" ]; then
-            echo "Found gradlew at: $GRADLEW_PATH"
-            chmod +x "$GRADLEW_PATH" || true
-            WRAPPER_DIR=$(dirname "$GRADLEW_PATH")
-            echo "Changing to wrapper directory: $WRAPPER_DIR"
-            pushd "$WRAPPER_DIR" || exit 1
-            echo "Running ./gradlew $TASK in $(pwd)"
-            ./gradlew "$TASK" --no-daemon --stacktrace
-            POP_RET=$?
-            popd
-            exit $POP_RET
-          else
-            echo "ERROR: gradlew not found in repository. Listing repo for debugging:"
+          if [ -z "$PROJECT_DIR" ]; then
+            echo "ERROR: Could not find a directory containing build.gradle or settings.gradle in the checked-out branch."
+            echo "Listing repo for debugging:"
             ls -la
             find . -maxdepth 6 -type f -print
-            echo "Please make sure the Gradle wrapper (gradlew and gradle/wrapper) are committed to the branch you're building."
-            exit 2
+            exit 3
           fi
+
+          echo "Project directory: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
+
+          # If gradlew exists in that directory, use it. Otherwise try to generate it.
+          if [ -f "./gradlew" ]; then
+            echo "Found existing gradlew in $PROJECT_DIR"
+            chmod +x ./gradlew || true
+          else
+            echo "Gradle wrapper not found. Installing system Gradle and generating wrapper..."
+            sudo apt-get update -qq
+            sudo apt-get install -y gradle || true
+            # generate the wrapper; tolerate failure but exit if wrapper still missing
+            gradle wrapper || true
+            if [ -f "./gradlew" ]; then
+              echo "Gradle wrapper generated successfully."
+              chmod +x ./gradlew || true
+            else
+              echo "ERROR: Failed to generate gradlew. Listing $PROJECT_DIR contents:"
+              ls -la
+              exit 4
+            fi
+          fi
+
+          # Run the wrapper
+          echo "Running wrapper: ./gradlew $TASK from $(pwd)"
+          ./gradlew "$TASK" --no-daemon --stacktrace
 
       - name: Create dummy keystore (for signing test builds)
         if: always()
         run: |
-          # create keystore in case release signing is needed later (no-op if already present)
           mkdir -p app/keystore
           if [ ! -f app/keystore/release.jks ]; then
             keytool -genkeypair -v \
