@@ -21,7 +21,6 @@ jobs:
       - name: Checkout target branch
         uses: actions/checkout@v4
         with:
-          # Checkout the branch specified by input (fetch all refs)
           ref: ${{ github.event.inputs.branch }}
           fetch-depth: 0
 
@@ -46,10 +45,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Optionally create dummy keystore (for release signing)
-        if: startsWith(toLower(github.event.inputs.buildFlavor || 'FreeDebug'), 'free') == false || contains(toLower(github.event.inputs.buildFlavor || 'FreeDebug'), 'release')
+      - name: Create dummy keystore (for signing test builds)
         run: |
-          echo "Creating dummy keystore at app/keystore/release.jks"
           mkdir -p app/keystore
           keytool -genkeypair -v \
             -keystore app/keystore/release.jks \
